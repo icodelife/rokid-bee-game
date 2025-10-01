@@ -309,8 +309,9 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 lives--
                 if (lives <= 0) {
                     gameOver = true
-                    activityWindow?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // 新增：游戏结束时关闭屏幕常亮
-                    focusedButtonIndex = 0 
+                    // 使用 post 将 clearFlags 操作延迟执行
+                    post { activityWindow?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+                    focusedButtonIndex = 0
                     newHighScoreAchievedThisGame = false
                     if (score > highScore) {
                         highScore = score

@@ -5,7 +5,6 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.drawable.Drawable // 引入 Drawable
 
-// 修改构造函数以接收一个 Drawable 对象
 class Player(x: Float, y: Float, private val playerDrawable: Drawable) : GameObject(x, y) {
 
     override val rect: RectF
@@ -18,7 +17,5 @@ class Player(x: Float, y: Float, private val playerDrawable: Drawable) : GameObj
         playerDrawable.setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
         // 绘制 Drawable
         playerDrawable.draw(canvas)
-        // paint.color = playerColor // 不再需要，因为我们使用 Drawable
-        // canvas.drawRect(rect, paint) // 不再需要，因为我们使用 Drawable
     }
 }

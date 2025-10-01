@@ -3,50 +3,56 @@ package com.risenav.rokid.beegame
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.drawable.Drawable // 引入 Drawable
+import android.graphics.drawable.Drawable
 import kotlin.math.absoluteValue
 import kotlin.random.Random
 
-// 修改构造函数以接收宽度、高度和 Drawable
+// Constructor parameters enemyWidth and enemyHeight are kept for compatibility,
+// but the actual display size is now fixed relative to the player's size.
 class Enemy(
     x: Float,
     y: Float,
-    val enemyWidth: Float,
-    val enemyHeight: Float,
-    private val enemyDrawable: Drawable // 修改为 Drawable
+    val enemyWidth: Float, // Original width, now potentially unused for rect/bounds
+    val enemyHeight: Float, // Original height, now potentially unused for rect/bounds
+    private val enemyDrawable: Drawable
 ) : GameObject(x, y) {
 
-    private var vx: Float = 3f // 敌人水平移动速度
+    companion object {
+        private const val PLAYER_SIZE = 60f // Player's dimension (width/height)
+        private const val ENEMY_DISPLAY_SCALE_FACTOR = 0.5f // Enemy is 50% smaller
+        const val ENEMY_EFFECTIVE_SIZE = PLAYER_SIZE * ENEMY_DISPLAY_SCALE_FACTOR // This will be 30f
+        private const val HALF_ENEMY_EFFECTIVE_SIZE = ENEMY_EFFECTIVE_SIZE / 2f
+    }
 
-    // 初始化射击间隔，例如1.5秒到4秒
+    private var vx: Float = 3f
+
     var shotInterval: Long = 1500L + Random.nextLong(0L, 2501L)
-
-    // 初始化lastShotTime，使其首次射击时间更分散
     var lastShotTime: Long = System.currentTimeMillis() - Random.nextLong(shotInterval / 4, shotInterval + 1L)
 
     override val rect: RectF
-        get() = RectF(x - enemyWidth / 2, y - enemyHeight / 2, x + enemyWidth / 2, y + enemyHeight / 2)
+        get() = RectF(
+            x - HALF_ENEMY_EFFECTIVE_SIZE,
+            y - HALF_ENEMY_EFFECTIVE_SIZE,
+            x + HALF_ENEMY_EFFECTIVE_SIZE,
+            y + HALF_ENEMY_EFFECTIVE_SIZE
+        )
 
     override fun update() {
-        x += vx // 更新敌人X坐标
+        x += vx
     }
 
-    // 检查敌人是否碰到屏幕边界
     fun checkBounds(screenWidth: Int) {
-        if (x - enemyWidth / 2 < 0) { // 碰到左边界
-            vx = vx.absoluteValue // 改为向右移动
+        // Use ENEMY_EFFECTIVE_SIZE for consistent boundary checks
+        if (x - HALF_ENEMY_EFFECTIVE_SIZE < 0) {
+            vx = vx.absoluteValue
         }
-        if (x + enemyWidth / 2 > screenWidth) { // 碰到右边界
-            vx = -vx.absoluteValue // 改为向左移动
+        if (x + HALF_ENEMY_EFFECTIVE_SIZE > screenWidth) {
+            vx = -vx.absoluteValue
         }
     }
 
     override fun draw(canvas: Canvas, paint: Paint) {
-        // 设置 Drawable 的边界
         enemyDrawable.setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
-        // 绘制 Drawable
         enemyDrawable.draw(canvas)
-        // paint.color = enemyColor // 不再需要
-        // canvas.drawRect(rect, paint) // 不再需要
     }
 }
