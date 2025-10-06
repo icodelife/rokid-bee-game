@@ -5,6 +5,9 @@ import android.os.Bundle
 import android.view.Window
 import android.view.WindowManager
 
+/**
+ * 游戏的主活动
+ */
 class MainActivity : Activity() {
     private lateinit var gameView: GameView
 
@@ -20,17 +23,17 @@ class MainActivity : Activity() {
         )
 
         gameView = GameView(this)
-        gameView.setWindow(window) // 新增：将 window 对象传递给 GameView
+        gameView.setWindow(window) // 将 window 对象传递给 GameView
         setContentView(gameView)
     }
 
     override fun onPause() {
         super.onPause()
-        gameView.pause()
+        gameView.pause() // 暂停游戏
     }
 
     override fun onResume() {
         super.onResume()
-        gameView.resume()
+        gameView.resume() // 恢复游戏
     }
 }

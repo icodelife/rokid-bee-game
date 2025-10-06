@@ -5,6 +5,13 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 
+/**
+ * 玩家
+ *
+ * @property x 玩家的 x 坐标
+ * @property y 玩家的 y 坐标
+ * @property playerBitmap 玩家的位图
+ */
 class Player(
     x: Float,
     y: Float,
@@ -12,7 +19,7 @@ class Player(
 ) : GameObject(x, y) {
 
     companion object {
-        // Set a fixed display width for the player for consistent gameplay
+        // 为玩家设置固定的显示宽度，以确保游戏体验的一致性
         const val PLAYER_DISPLAY_WIDTH = 60f
     }
 
@@ -20,7 +27,7 @@ class Player(
     private val playerHeight: Float
 
     init {
-        // Maintain the aspect ratio of the player's bitmap
+        // 保持玩家位图的宽高比
         val aspectRatio = if (playerBitmap.height > 0) playerBitmap.width.toFloat() / playerBitmap.height.toFloat() else 1f
         playerWidth = PLAYER_DISPLAY_WIDTH
         playerHeight = playerWidth / aspectRatio
@@ -35,11 +42,11 @@ class Player(
         )
 
     override fun update() {
-        // Player position is updated in GameView based on user input
+        // 玩家位置在 GameView 中根据用户输入进行更新
     }
 
     override fun draw(canvas: Canvas, paint: Paint) {
-        // Draw the bitmap scaled to the calculated rect
+        // 将位图缩放到计算出的矩形中绘制
         canvas.drawBitmap(playerBitmap, null, rect, paint)
     }
 }
