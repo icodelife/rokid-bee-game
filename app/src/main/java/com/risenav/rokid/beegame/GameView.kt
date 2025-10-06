@@ -66,6 +66,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val gamePrimaryColor: Int
     private val playerBitmap: Bitmap?
     private val enemySpriteSheet: Bitmap?
+    private val playerBulletBitmap: Bitmap?
+    private val enemyBulletBitmap: Bitmap?
 
     private var activityWindow: Window? = null // 新增：存储 Activity 的 Window 对象
 
@@ -77,6 +79,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         gamePrimaryColor = ContextCompat.getColor(context, R.color.game_primary_color)
         playerBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.airplane)
         enemySpriteSheet = BitmapFactory.decodeResource(context.resources, R.drawable.galaxing)
+        playerBulletBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.bullet)
+        enemyBulletBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_bullet)
 
         focusedButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -247,9 +251,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         if (player.x + playerHalfWidth > width) player.x = width - playerHalfWidth
 
         if (playerCanShoot && !waitingForNextWave && currentTime - lastPlayerShotTime > 500) {
-            playerBullets.add(Bullet(context, player.rect.centerX(), player.rect.top - 20, -20f))
-            lastPlayerShotTime = currentTime
-            playerCanShoot = false
+            playerBulletBitmap?.let {
+                playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, isPlayerBullet = true))
+                lastPlayerShotTime = currentTime
+                playerCanShoot = false
+            }
         }
 
         enemies.forEach {
@@ -262,7 +268,9 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             val currentEnemyBulletSpeed = BASE_ENEMY_BULLET_SPEED * (1f + (currentLevel - 1) * 0.10f)
             for (enemy in potentialShooters) {
                 if (enemyBullets.size < currentLevel + 2 && currentTime - enemy.lastShotTime > enemy.shotInterval) {
-                    enemyBullets.add(Bullet(context, enemy.rect.centerX(), enemy.rect.bottom + 10, currentEnemyBulletSpeed))
+                    enemyBulletBitmap?.let {
+                        enemyBullets.add(Bullet(it, enemy.rect.centerX(), enemy.rect.bottom + 10, currentEnemyBulletSpeed, isPlayerBullet = false))
+                    }
                     enemy.lastShotTime = currentTime
                     enemy.shotInterval = (1500L + Random.nextLong(0, 2500_000_000L / (currentLevel * 100_000L))).coerceAtLeast(500L)
                 }
@@ -339,7 +347,6 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)
             enemies.forEach { it.draw(canvas, paint) }
-            paint.color = gamePrimaryColor
             playerBullets.forEach { it.draw(canvas, paint) }
             enemyBullets.forEach { it.draw(canvas, paint) }
         }
@@ -442,9 +449,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 }
                  KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE -> {
                      if (playerCanShoot && !waitingForNextWave && System.currentTimeMillis() - lastPlayerShotTime > 500) {
-                         playerBullets.add(Bullet(context, player.rect.centerX(), player.rect.top - 20, -20f))
-                         lastPlayerShotTime = System.currentTimeMillis()
-                         playerCanShoot = false
+                         playerBulletBitmap?.let {
+                            playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, isPlayerBullet = true))
+                            lastPlayerShotTime = System.currentTimeMillis()
+                            playerCanShoot = false
+                         }
                      }
                     return true
                  }
@@ -476,10 +485,12 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         } else if (!gameOver && event.action == MotionEvent.ACTION_DOWN) {
             if (playerCanShoot && !waitingForNextWave && System.currentTimeMillis() - lastPlayerShotTime > 500) {
-                 playerBullets.add(Bullet(context, player.rect.centerX(), player.rect.top - 20, -20f))
-                 lastPlayerShotTime = System.currentTimeMillis()
-                 playerCanShoot = false
-                 return true
+                 playerBulletBitmap?.let {
+                     playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, isPlayerBullet = true))
+                     lastPlayerShotTime = System.currentTimeMillis()
+                     playerCanShoot = false
+                     return true
+                 }
             }
         }
         return super.onTouchEvent(event)
