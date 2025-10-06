@@ -6,9 +6,9 @@
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@drawable/play"
+        android:icon="@drawable/airplane"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/play"
+        android:roundIcon="@drawable/airplane"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         <activity android:name=".MainActivity"

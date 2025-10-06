@@ -13,6 +13,10 @@ class Bullet(
     isPlayerBullet: Boolean // Add a flag to distinguish bullet types
 ) : GameObject(x, y) {
 
+    companion object {
+        const val BULLET_DISPLAY_WIDTH = 7f
+    }
+
     private val bulletWidth: Float
     private val bulletHeight: Float
 
@@ -20,7 +24,7 @@ class Bullet(
         if (isPlayerBullet) {
             // Calculate player bullet size relative to the player's size for better visual scale
             val aspectRatio = if (bitmap.width > 0) bitmap.height.toFloat() / bitmap.width.toFloat() else 6f
-            bulletWidth = Player.PLAYER_DISPLAY_WIDTH * 0.2f // Bullet width is 20% of player width
+            bulletWidth = BULLET_DISPLAY_WIDTH
             bulletHeight = bulletWidth * aspectRatio
         } else {
             // Set a fixed size for enemy bullets (since it's 9x9, width and height are the same)
