@@ -1,21 +1,45 @@
 package com.risenav.rokid.beegame
 
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.drawable.Drawable // 引入 Drawable
 
-class Player(x: Float, y: Float, private val playerDrawable: Drawable) : GameObject(x, y) {
+class Player(
+    x: Float,
+    y: Float,
+    private val playerBitmap: Bitmap
+) : GameObject(x, y) {
+
+    companion object {
+        // Set a fixed display width for the player for consistent gameplay
+        const val PLAYER_DISPLAY_WIDTH = 60f
+    }
+
+    private val playerWidth: Float
+    private val playerHeight: Float
+
+    init {
+        // Maintain the aspect ratio of the player's bitmap
+        val aspectRatio = if (playerBitmap.height > 0) playerBitmap.width.toFloat() / playerBitmap.height.toFloat() else 1f
+        playerWidth = PLAYER_DISPLAY_WIDTH
+        playerHeight = playerWidth / aspectRatio
+    }
 
     override val rect: RectF
-        get() = RectF(x - 30, y - 30, x + 30, y + 30) // 玩家尺寸定义：宽度60，高度60
+        get() = RectF(
+            x - playerWidth / 2,
+            y - playerHeight / 2,
+            x + playerWidth / 2,
+            y + playerHeight / 2
+        )
 
-    override fun update() { /* 玩家移动逻辑在 GameView.update() 处理 */ }
+    override fun update() {
+        // Player position is updated in GameView based on user input
+    }
 
     override fun draw(canvas: Canvas, paint: Paint) {
-        // 设置 Drawable 的边界
-        playerDrawable.setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
-        // 绘制 Drawable
-        playerDrawable.draw(canvas)
+        // Draw the bitmap scaled to the calculated rect
+        canvas.drawBitmap(playerBitmap, null, rect, paint)
     }
 }

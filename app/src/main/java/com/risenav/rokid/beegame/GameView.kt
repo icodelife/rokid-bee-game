@@ -1,10 +1,7 @@
 package com.risenav.rokid.beegame
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color // 用于背景色和按钮背景色
-import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.*
 import android.graphics.drawable.Drawable // 引入 Drawable
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -67,8 +64,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
     private var focusedButtonIndex = 0
     private val gamePrimaryColor: Int
-    private val playerDrawable: Drawable?
-    private val enemyDrawable: Drawable? 
+    private val playerBitmap: Bitmap?
+    private val enemySpriteSheet: Bitmap?
 
     private var activityWindow: Window? = null // 新增：存储 Activity 的 Window 对象
 
@@ -78,23 +75,23 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         isFocusableInTouchMode = true
 
         gamePrimaryColor = ContextCompat.getColor(context, R.color.game_primary_color)
-        playerDrawable = ContextCompat.getDrawable(context, R.drawable.play)
-        enemyDrawable = ContextCompat.getDrawable(context, R.drawable.enemy)
+        playerBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.airplane)
+        enemySpriteSheet = BitmapFactory.decodeResource(context.resources, R.drawable.galaxing)
 
         focusedButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE 
-            strokeWidth = 2f           
-            color = gamePrimaryColor     
+            style = Paint.Style.STROKE
+            strokeWidth = 2f
+            color = gamePrimaryColor
         }
         focusedButtonTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = gamePrimaryColor 
+            color = gamePrimaryColor
             textSize = 32f
             textAlign = Paint.Align.CENTER
         }
 
         unfocusedButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
-            strokeWidth = 1.5f         
+            strokeWidth = 1.5f
             val alpha = (255 * 0.4).toInt()
             color = Color.argb(alpha, Color.red(gamePrimaryColor), Color.green(gamePrimaryColor), Color.blue(gamePrimaryColor))
         }
@@ -115,7 +112,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        playerDrawable?.let { 
+        playerBitmap?.let {
             player = Player(width / 2f, height - (height * 0.15f).coerceAtLeast(60f), it)
         } ?: run {
             throw IllegalStateException("Player drawable R.drawable.play could not be loaded.")
@@ -132,20 +129,25 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
     private fun spawnNewEnemies() {
         enemies.clear()
-        enemyDrawable?.let { drawable -> 
+        enemySpriteSheet?.let { spriteSheet ->
             val screenWidthFloat = width.toFloat()
-            val enemyBaseWidth = screenWidthFloat / 10f
-            val enemyBaseHeight = enemyBaseWidth
 
+            // Original sprite sheet is 360x44 for 6 frames, so one frame is 60x44
+            val frameWidth = 60f
+            val frameHeight = 44f
+            val aspectRatio = frameWidth / frameHeight
+
+            val enemyBaseWidth = screenWidthFloat / 10f
             val newEnemyWidth = enemyBaseWidth * 0.8f
-            val newEnemyHeight = enemyBaseHeight * 0.8f
+            val newEnemyHeight = newEnemyWidth / aspectRatio // Maintain aspect ratio
+
             val horizontalSpacing = newEnemyWidth * 0.25f
             val verticalSpacing = newEnemyHeight * 0.3f
             val newStartY = newEnemyHeight / 2f + (height * 0.05f)
 
             val formationRows = intArrayOf(5, 3, 1)
             var currentY = newStartY
-            for (enemiesInThisRow in formationRows) {
+            formationRows.forEachIndexed { rowIndex, enemiesInThisRow ->
                 val totalRowWidth = (enemiesInThisRow * newEnemyWidth) + ((enemiesInThisRow - 1).coerceAtLeast(0) * horizontalSpacing)
                 var currentX = (screenWidthFloat - totalRowWidth) / 2f
                 if (currentX < newEnemyWidth / 2f) {
@@ -156,13 +158,14 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                     if (actualEnemyCenterX + newEnemyWidth / 2f > screenWidthFloat) {
                         break
                     }
-                    enemies.add(Enemy(actualEnemyCenterX, currentY, newEnemyWidth, newEnemyHeight, drawable))
+                    // rowIndex can be used as the enemy type (0, 1, or 2)
+                    enemies.add(Enemy(actualEnemyCenterX, currentY, newEnemyWidth, newEnemyHeight, spriteSheet, rowIndex))
                     currentX += newEnemyWidth + horizontalSpacing
                 }
                 currentY += newEnemyHeight + verticalSpacing
             }
         } ?: run {
-            throw IllegalStateException("Enemy drawable R.drawable.enemy could not be loaded.")
+            throw IllegalStateException("Enemy spritesheet R.drawable.galaxing could not be loaded.")
         }
         waitingForNextWave = false
     }
@@ -181,7 +184,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             player.x = width / 2f
             player.y = height - (height * 0.15f).coerceAtLeast(60f)
         } else {
-            playerDrawable?.let { 
+            playerBitmap?.let {
                 player = Player(width / 2f, height - (height * 0.15f).coerceAtLeast(60f), it)
             } ?: run {
                  throw IllegalStateException("Player drawable R.drawable.play could not be loaded during restart.")
@@ -209,7 +212,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
             holder.unlockCanvasAndPost(canvas)
             try {
-                Thread.sleep(16) 
+                Thread.sleep(16)
             } catch (e: InterruptedException) {
             }
         }
@@ -225,7 +228,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                     highScoreBlinkStartTime = currentTime
                 }
             }
-            return 
+            return
         }
 
         if (enemies.isEmpty() && !waitingForNextWave) {
@@ -286,8 +289,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                     bulletIter.remove()
                     enemyIter.remove()
                     score += 10
-                    playerCanShoot = true 
-                    break 
+                    playerCanShoot = true
+                    break
                 }
             }
         }
@@ -296,7 +299,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         while (eIter.hasNext()) {
             val b = eIter.next()
             b.update()
-            if (b.rect.bottom > height) { 
+            if (b.rect.bottom > height) {
                 eIter.remove()
             }
         }
@@ -331,50 +334,50 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     }
 
     private fun drawGame(canvas: Canvas) {
-        canvas.drawColor(Color.BLACK) 
+        canvas.drawColor(Color.BLACK)
 
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)
             enemies.forEach { it.draw(canvas, paint) }
-            paint.color = gamePrimaryColor 
+            paint.color = gamePrimaryColor
             playerBullets.forEach { it.draw(canvas, paint) }
             enemyBullets.forEach { it.draw(canvas, paint) }
         }
 
         paint.color = gamePrimaryColor
-        paint.textSize = 20f 
+        paint.textSize = 20f
         paint.textAlign = Paint.Align.LEFT
-        val infoTextTopMargin = 30f 
-        val textVerticalSpacing = 30f 
+        val infoTextTopMargin = 30f
+        val textVerticalSpacing = 30f
         canvas.drawText("分数: $score", 20f, infoTextTopMargin, paint)
         canvas.drawText("生命: $lives", 20f, infoTextTopMargin + textVerticalSpacing, paint)
         canvas.drawText("关卡: $currentLevel", 20f, infoTextTopMargin + textVerticalSpacing * 2, paint)
 
         if (gameOver) {
             paint.textAlign = Paint.Align.CENTER
-            paint.textSize = 32f 
-            val gameOverTextY = height / 2f - 100f 
+            paint.textSize = 32f
+            val gameOverTextY = height / 2f - 100f
             canvas.drawText("游戏结束", width / 2f, gameOverTextY, paint)
 
-            var highScoreTextY = gameOverTextY + 50f 
+            var highScoreTextY = gameOverTextY + 50f
             if (newHighScoreAchievedThisGame) {
                 val highScoreTextPaint = if (highScoreBlinkCount < TOTAL_BLINK_STATES && !highScoreBlinkStateVisible) {
-                    Paint(focusedButtonTextPaint).apply { alpha = 0; textSize = 32f } 
+                    Paint(focusedButtonTextPaint).apply { alpha = 0; textSize = 32f }
                 } else {
-                    Paint(focusedButtonTextPaint).apply { textSize = 32f } 
+                    Paint(focusedButtonTextPaint).apply { textSize = 32f }
                 }
-                if (highScoreTextPaint.alpha != 0) { 
+                if (highScoreTextPaint.alpha != 0) {
                      canvas.drawText("新纪录: $highScore", width / 2f, highScoreTextY, highScoreTextPaint)
                 }
             } else {
-                 highScoreTextY = gameOverTextY + 20f 
+                 highScoreTextY = gameOverTextY + 20f
             }
 
-            val buttonWidth = 180f 
-            val buttonHeight = 60f  
-            val buttonSpacingHorizontal = 20f 
+            val buttonWidth = 180f
+            val buttonHeight = 60f
+            val buttonSpacingHorizontal = 20f
             val totalButtonsWidth = buttonWidth * 2 + buttonSpacingHorizontal
-            val buttonsY = highScoreTextY + buttonHeight + 20f 
+            val buttonsY = highScoreTextY + buttonHeight + 20f
 
             val firstButtonLeft = (width - totalButtonsWidth) / 2f
 
@@ -413,23 +416,23 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         if (gameOver) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    if (focusedButtonIndex == 1) focusedButtonIndex = 0 
+                    if (focusedButtonIndex == 1) focusedButtonIndex = 0
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (focusedButtonIndex == 0) focusedButtonIndex = 1 
+                    if (focusedButtonIndex == 0) focusedButtonIndex = 1
                     return true
                 }
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    if (focusedButtonIndex == 0) { 
+                    if (focusedButtonIndex == 0) {
                         restartGame()
-                    } else { 
+                    } else {
                         (context as? android.app.Activity)?.finish()
                     }
                     return true
                 }
             }
-        } else { 
+        } else {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_A -> {
                     movingLeft = true; return true
@@ -457,17 +460,17 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_D -> movingRight = false
             }
         }
-        return true 
+        return true
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (gameOver && event.action == MotionEvent.ACTION_DOWN) {
             if (restartButtonRect.contains(event.x, event.y)) {
-                focusedButtonIndex = 0 
+                focusedButtonIndex = 0
                 restartGame()
                 return true
             } else if (exitButtonRect.contains(event.x, event.y)) {
-                focusedButtonIndex = 1 
+                focusedButtonIndex = 1
                  (context as? android.app.Activity)?.finish()
                 return true
             }
@@ -485,14 +488,14 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     fun pause() {
         running = false
         try {
-            thread?.join(500) 
+            thread?.join(500)
         } catch (e: InterruptedException) {
         }
         thread = null
     }
 
     fun resume() {
-        if (thread == null || !running) { 
+        if (thread == null || !running) {
             running = true
             thread = Thread(this)
             thread?.start()
