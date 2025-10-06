@@ -32,6 +32,9 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private var currentLevel = 1        // 当前关卡
     private var highScore = 0           // 最高分
 
+    private var backgroundScrollY = 0f
+    private val backgroundScrollSpeed = 2f
+
     private val PREFS_NAME = "BeeGamePrefs"
     private val HIGH_SCORE_KEY = "highScore"
 
@@ -68,6 +71,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val enemySpriteSheet: Bitmap?
     private val playerBulletBitmap: Bitmap?
     private val enemyBulletBitmap: Bitmap?
+    private val backgroundBitmap: Bitmap?
 
     private var activityWindow: Window? = null // 新增：存储 Activity 的 Window 对象
 
@@ -81,6 +85,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         enemySpriteSheet = BitmapFactory.decodeResource(context.resources, R.drawable.galaxing)
         playerBulletBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.bullet)
         enemyBulletBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_bullet)
+        backgroundBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.galaxing_bg)
 
         focusedButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -235,6 +240,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             return
         }
 
+        backgroundScrollY += backgroundScrollSpeed
+        if (backgroundScrollY >= height) {
+            backgroundScrollY = 0f
+        }
+
         if (enemies.isEmpty() && !waitingForNextWave) {
             currentLevel++
             waitingForNextWave = true
@@ -342,7 +352,14 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     }
 
     private fun drawGame(canvas: Canvas) {
-        canvas.drawColor(Color.BLACK)
+        backgroundBitmap?.let {
+            val destRect1 = RectF(0f, backgroundScrollY - height, width.toFloat(), backgroundScrollY)
+            canvas.drawBitmap(it, null, destRect1, null)
+            val destRect2 = RectF(0f, backgroundScrollY, width.toFloat(), backgroundScrollY + height)
+            canvas.drawBitmap(it, null, destRect2, null)
+        } ?: run {
+            canvas.drawColor(Color.BLACK)
+        }
 
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)

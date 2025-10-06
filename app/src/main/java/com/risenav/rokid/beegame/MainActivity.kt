@@ -11,7 +11,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 保证在播放动画时屏幕不息屏
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // 全屏
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         window.setFlags(
