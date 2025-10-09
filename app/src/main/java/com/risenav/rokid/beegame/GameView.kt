@@ -364,6 +364,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
     private fun update() {
         if (isPaused) return
+        if (!::player.isInitialized) return
         val currentTime = System.currentTimeMillis()
         if (gameOver) {
             if (newHighScoreAchievedThisGame && highScoreBlinkCount < totalBlinkStates) {
