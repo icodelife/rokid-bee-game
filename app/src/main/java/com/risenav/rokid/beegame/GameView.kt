@@ -42,6 +42,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private var currentLevel = initialLevel // 当前关卡
     private var gameOver = false            // 游戏是否结束
     private var highScore = 0               // 最高分
+    private var isPaused = false
 
     // 背景滚动参数
     private var backgroundScrollY = 0f
@@ -98,6 +99,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
     // 缓存高分绘制 paint，避免每帧 new 对象
     private val highScorePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val pauseOverlayPaint: Paint
+    private val pauseTextPaint: Paint
 
     init {
         holder.addCallback(this)
@@ -146,6 +149,15 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             textAlign = Paint.Align.CENTER
             color = gamePrimaryColor
             alpha = 255
+        }
+
+        pauseOverlayPaint = Paint().apply {
+            color = Color.argb(180, 0, 0, 0) // Semi-transparent black
+        }
+        pauseTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 48f
+            textAlign = Paint.Align.CENTER
         }
 
         // 加载最高分
@@ -293,6 +305,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             newHighScoreAchievedThisGame = false
             highScoreBlinkCount = totalBlinkStates
             focusedButtonIndex = 0
+            isPaused = false
 
             if (::player.isInitialized) {
                 player.x = width / 2f
@@ -350,6 +363,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     }
 
     private fun update() {
+        if (isPaused) return
         val currentTime = System.currentTimeMillis()
         if (gameOver) {
             if (newHighScoreAchievedThisGame && highScoreBlinkCount < totalBlinkStates) {
@@ -599,9 +613,23 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 exitButtonRect.centerY() - (exitTxtPaintToUse.descent() + exitTxtPaintToUse.ascent()) / 2
             canvas.drawText(exitButtonText, exitButtonRect.centerX(), textYExit, exitTxtPaintToUse)
         }
+
+        if (isPaused && !gameOver) {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), pauseOverlayPaint)
+            val textY = height / 2f - (pauseTextPaint.descent() + pauseTextPaint.ascent()) / 2
+            canvas.drawText("游戏暂停", width / 2f, textY, pauseTextPaint)
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (isPaused && !gameOver) {
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                isPaused = false
+                performClick()
+                return true
+            }
+        }
+
         if (gameOver && event.action == MotionEvent.ACTION_DOWN) {
             if (restartButtonRect.contains(event.x, event.y)) {
                 focusedButtonIndex = 0
@@ -624,42 +652,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (!gameOver) {
-            return when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP -> {
-                    movingLeft = true; true
-                }
-
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    movingRight = true; true
-                }
-
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE -> {
-                    val currentTime = System.currentTimeMillis()
-                    if (playerCanShoot && !waitingForNextWave && currentTime - lastPlayerShotTime > 500) {
-                        playerBulletBitmap?.let {
-                            playerBullets.add(
-                                Bullet(
-                                    it,
-                                    player.rect.centerX(),
-                                    player.rect.top - 20,
-                                    -20f,
-                                    BulletType.PLAYER
-                                )
-                            )
-                            lastPlayerShotTime = currentTime
-                            playerCanShoot = false
-                        }
-                    }
-                    true
-                }
-
-                else -> {
-                    Log.d("KeyEvent", "按键按下：$keyCode")
-                    super.onKeyDown(keyCode, event)
-                }
-            }
-        } else {
+        if (gameOver) {
             return when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_LEFT -> {
                     focusedButtonIndex = 0; true
@@ -672,41 +665,78 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_SPACE -> {
                     if (focusedButtonIndex == 0) {
                         restartGame()
-                        true
                     } else {
                         (context as? MainActivity)?.finish()
-                        true
                     }
+                    true
                 }
 
                 else -> super.onKeyDown(keyCode, event)
             }
         }
+
+        if (isPaused) {
+            return when (keyCode) {
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_SPACE -> {
+                    isPaused = false
+                    true
+                }
+
+                else -> true
+            }
+        }
+
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP -> {
+                movingLeft = true; true
+            }
+
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                movingRight = true; true
+            }
+
+            KeyEvent.KEYCODE_BACK -> true
+            else -> {
+                Log.d("KeyEvent", "按键按下：$keyCode")
+                super.onKeyDown(keyCode, event)
+            }
+        }
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        if (!gameOver) {
-            return when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP -> {
-                    movingLeft = false
-                    true
-                }
+        if (keyCode == KeyEvent.KEYCODE_BACK && !gameOver) {
+            if (isPaused) {
+                (context as? MainActivity)?.finish()
+            } else {
+                isPaused = true
+            }
+            return true
+        }
 
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    movingRight = false
-                    true
-                }
+        if (isPaused || gameOver) {
+            return super.onKeyUp(keyCode, event)
+        }
 
-                else -> {
-                    Log.d("KeyEvent", "按键松开：$keyCode")
-                    super.onKeyUp(keyCode, event)
-                }
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_UP -> {
+                movingLeft = false
+                true
+            }
+
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                movingRight = false
+                true
+            }
+
+            else -> {
+                Log.d("KeyEvent", "按键松开：$keyCode")
+                super.onKeyUp(keyCode, event)
             }
         }
-        return super.onKeyUp(keyCode, event)
     }
 
     fun pause() {
+        isPaused = true
         running = false
         thread?.let {
             it.interrupt()
@@ -721,6 +751,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     fun resume() {
         if (running) return
         running = true
+        isPaused = false
         thread = Thread(this).also { it.start() }
     }
 
