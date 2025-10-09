@@ -6,25 +6,33 @@ import android.view.Window
 import android.view.WindowManager
 
 /**
- * 游戏的主活动
+ * 主活动类，负责游戏窗口的初始化与显示
  */
 class MainActivity : Activity() {
+
     private lateinit var gameView: GameView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 保证在播放动画时屏幕不息屏
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        // 全屏
+
+        // 取消标题栏
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        // 设置全屏显示
         window.setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
 
+        // 设置保持屏幕常亮
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // 初始化游戏视图
         gameView = GameView(this)
-        gameView.setWindow(window) // 将 window 对象传递给 GameView
         setContentView(gameView)
+
+        // 设置窗口引用
+        gameView.setWindow(window)
     }
 
     override fun onPause() {
@@ -35,5 +43,10 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         gameView.resume() // 恢复游戏
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        gameView.release() // 释放资源
     }
 }
