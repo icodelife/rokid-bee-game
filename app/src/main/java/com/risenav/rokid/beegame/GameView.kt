@@ -2,14 +2,13 @@ package com.risenav.rokid.beegame
 
 import android.content.Context
 import android.graphics.*
-import android.graphics.drawable.Drawable // 引入 Drawable
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.view.Window // 新增导入
-import android.view.WindowManager // 新增导入
-import androidx.core.content.ContextCompat // 用于从 XML 加载颜色和 Drawable
+import android.view.Window
+import android.view.WindowManager
+import androidx.core.content.ContextCompat
 import kotlin.random.Random
 
 class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder.Callback {
@@ -22,22 +21,31 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val enemies = mutableListOf<Enemy>() // 敌人列表
     private val playerBullets = mutableListOf<Bullet>() // 玩家子弹列表
     private val enemyBullets = mutableListOf<Bullet>() // 敌人子弹列表
+    private val explosions = mutableListOf<Explosion>() // 爆炸效果列表
 
     private var lastPlayerShotTime = 0L // 玩家上次射击时间
     private var playerCanShoot = true   // 玩家是否可以射击
 
-    private var score = 0               // 分数
-    private var lives = 5              // 初始生命值
-    private var gameOver = false            // 游戏是否结束
-    private var currentLevel = 1        // 当前关卡
-    private var highScore = 0           // 最高分
+    // 初始值常量，避免魔法数字重复
+    private val INITIAL_SCORE = 0
+    private val INITIAL_LIVES = 5
+    private val INITIAL_LEVEL = 1
 
+    private var score = INITIAL_SCORE       // 当前分数
+    private var lives = INITIAL_LIVES       // 当前生命
+    private var currentLevel = INITIAL_LEVEL // 当前关卡
+    private var gameOver = false            // 游戏是否结束
+    private var highScore = 0               // 最高分
+
+    // 背景滚动参数
     private var backgroundScrollY = 0f
     private val backgroundScrollSpeed = 2f
 
+    // 存储高分的 SharedPreferences
     private val PREFS_NAME = "BeeGamePrefs"
     private val HIGH_SCORE_KEY = "highScore"
 
+    // 高分闪烁逻辑
     private var newHighScoreAchievedThisGame = false
     private var highScoreBlinkCount = 0
     private var highScoreBlinkStartTime = 0L
@@ -46,15 +54,18 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val TOTAL_BLINK_CYCLES = 3
     private val TOTAL_BLINK_STATES = TOTAL_BLINK_CYCLES * 2
 
+    // 玩家移动逻辑
     private var movingLeft = false
     private var movingRight = false
     private val playerSpeed = 20f
 
+    // 敌人波次控制
     private var waitingForNextWave = false
     private var nextWaveSpawnTime = 0L
     private val ENEMY_SPAWN_DELAY = 3000L
     private val BASE_ENEMY_BULLET_SPEED = 8f
 
+    // 游戏结束按钮
     private val restartButtonRect = RectF()
     private val restartButtonText = "重新开始"
     private lateinit var focusedButtonPaint: Paint
@@ -66,27 +77,33 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val exitButtonText = "退出游戏"
 
     private var focusedButtonIndex = 0
+
+    // 资源加载
     private val gamePrimaryColor: Int
     private val playerBitmap: Bitmap?
     private val enemySpriteSheet: Bitmap?
     private val playerBulletBitmap: Bitmap?
     private val enemyBulletBitmap: Bitmap?
     private val backgroundBitmap: Bitmap?
+    private val explosionSprite: Bitmap?
 
-    private var activityWindow: Window? = null // 新增：存储 Activity 的 Window 对象
+    private var activityWindow: Window? = null // 存储 Activity 的 Window 对象
 
     init {
         holder.addCallback(this)
         isFocusable = true
         isFocusableInTouchMode = true
 
+        // 加载资源
         gamePrimaryColor = ContextCompat.getColor(context, R.color.game_primary_color)
         playerBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.airplane)
         enemySpriteSheet = BitmapFactory.decodeResource(context.resources, R.drawable.galaxing)
         playerBulletBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.bullet)
         enemyBulletBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.enemy_bullet)
         backgroundBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.galaxing_bg)
+        explosionSprite = BitmapFactory.decodeResource(context.resources, R.drawable.explode)
 
+        // 按钮画笔样式
         focusedButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 2f
@@ -97,7 +114,6 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             textSize = 32f
             textAlign = Paint.Align.CENTER
         }
-
         unfocusedButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 1.5f
@@ -111,20 +127,22 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             textAlign = Paint.Align.CENTER
         }
 
+        // 加载最高分
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         highScore = prefs.getInt(HIGH_SCORE_KEY, 0)
         highScoreBlinkCount = TOTAL_BLINK_STATES
     }
 
-    fun setWindow(window: Window) { // 新增：方法用于接收 Window 对象
+    fun setWindow(window: Window) {
         this.activityWindow = window
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
+        // 初始化玩家
         playerBitmap?.let {
             player = Player(width / 2f, height - (height * 0.15f).coerceAtLeast(60f), it)
         } ?: run {
-            throw IllegalStateException("Player drawable R.drawable.play could not be loaded.")
+            throw IllegalStateException("玩家图片 R.drawable.airplane 加载失败")
         }
         spawnNewEnemies()
         resume()
@@ -136,54 +154,48 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         pause()
     }
 
+    // 生成敌人
     private fun spawnNewEnemies() {
         enemies.clear()
         enemySpriteSheet?.let { spriteSheet ->
             val screenWidthFloat = width.toFloat()
-
-            // 原始雪碧图是 360x44，包含 6 帧，所以一帧是 60x44
             val frameWidth = 60f
             val frameHeight = 44f
             val aspectRatio = frameWidth / frameHeight
-
             val enemyBaseWidth = screenWidthFloat / 10f
             val newEnemyWidth = enemyBaseWidth * 0.8f
-            val newEnemyHeight = newEnemyWidth / aspectRatio // 保持宽高比
-
+            val newEnemyHeight = newEnemyWidth / aspectRatio
             val horizontalSpacing = newEnemyWidth * 0.25f
             val verticalSpacing = newEnemyHeight * 0.3f
             val newStartY = newEnemyHeight / 2f + (height * 0.05f)
-
             val formationRows = intArrayOf(5, 3, 1)
+
             var currentY = newStartY
             formationRows.forEachIndexed { rowIndex, enemiesInThisRow ->
                 val totalRowWidth = (enemiesInThisRow * newEnemyWidth) + ((enemiesInThisRow - 1).coerceAtLeast(0) * horizontalSpacing)
                 var currentX = (screenWidthFloat - totalRowWidth) / 2f
-                if (currentX < newEnemyWidth / 2f) {
-                    currentX = newEnemyWidth / 2f
-                }
+                if (currentX < newEnemyWidth / 2f) currentX = newEnemyWidth / 2f
+
                 for (i in 0 until enemiesInThisRow) {
                     val actualEnemyCenterX = currentX + newEnemyWidth / 2f
-                    if (actualEnemyCenterX + newEnemyWidth / 2f > screenWidthFloat) {
-                        break
-                    }
-                    // rowIndex 可以用作敌人类型 (0, 1, 或 2)
+                    if (actualEnemyCenterX + newEnemyWidth / 2f > screenWidthFloat) break
                     enemies.add(Enemy(actualEnemyCenterX, currentY, newEnemyWidth, newEnemyHeight, spriteSheet, rowIndex, width))
                     currentX += newEnemyWidth + horizontalSpacing
                 }
                 currentY += newEnemyHeight + verticalSpacing
             }
         } ?: run {
-            throw IllegalStateException("Enemy spritesheet R.drawable.galaxing could not be loaded.")
+            throw IllegalStateException("敌人雪碧图 R.drawable.galaxing 加载失败")
         }
         waitingForNextWave = false
     }
 
+    // 重新开始游戏
     private fun restartGame() {
-        activityWindow?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // 新增：重新开启屏幕常亮
-        score = 0
-        lives = 5
-        currentLevel = 1
+        activityWindow?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        score = INITIAL_SCORE
+        lives = INITIAL_LIVES
+        currentLevel = INITIAL_LEVEL
         gameOver = false
         newHighScoreAchievedThisGame = false
         highScoreBlinkCount = TOTAL_BLINK_STATES
@@ -196,20 +208,21 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             playerBitmap?.let {
                 player = Player(width / 2f, height - (height * 0.15f).coerceAtLeast(60f), it)
             } ?: run {
-                 throw IllegalStateException("Player drawable R.drawable.play could not be loaded during restart.")
+                throw IllegalStateException("玩家图片 R.drawable.airplane 在重新开始时加载失败")
             }
         }
         playerCanShoot = true
         lastPlayerShotTime = 0L
-
         enemies.clear()
         playerBullets.clear()
         enemyBullets.clear()
+        explosions.clear()
         spawnNewEnemies()
         waitingForNextWave = false
         nextWaveSpawnTime = 0L
     }
 
+    // 游戏主循环
     override fun run() {
         while (running) {
             if (!holder.surface.isValid) continue
@@ -222,11 +235,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             holder.unlockCanvasAndPost(canvas)
             try {
                 Thread.sleep(16)
-            } catch (e: InterruptedException) {
-            }
+            } catch (_: InterruptedException) {}
         }
     }
 
+    // 游戏逻辑更新
     private fun update() {
         val currentTime = System.currentTimeMillis()
         if (gameOver) {
@@ -240,11 +253,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             return
         }
 
+        // 背景滚动
         backgroundScrollY += backgroundScrollSpeed
-        if (backgroundScrollY >= height) {
-            backgroundScrollY = 0f
-        }
+        if (backgroundScrollY >= height) backgroundScrollY = 0f
 
+        // 波次生成
         if (enemies.isEmpty() && !waitingForNextWave) {
             currentLevel++
             waitingForNextWave = true
@@ -254,12 +267,14 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             spawnNewEnemies()
         }
 
+        // 玩家移动
         if (movingLeft) player.x -= playerSpeed
         if (movingRight) player.x += playerSpeed
         val playerHalfWidth = if (::player.isInitialized) player.rect.width() / 2f else 30f
         if (player.x - playerHalfWidth < 0) player.x = playerHalfWidth
         if (player.x + playerHalfWidth > width) player.x = width - playerHalfWidth
 
+        // 玩家射击
         if (playerCanShoot && !waitingForNextWave && currentTime - lastPlayerShotTime > 500) {
             playerBulletBitmap?.let {
                 playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, BulletType.PLAYER))
@@ -268,8 +283,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 敌人移动和射击
         enemies.forEach { it.update() }
-
         if (enemies.isNotEmpty() && !waitingForNextWave) {
             val potentialShooters = enemies.shuffled().take(minOf(enemies.size, currentLevel.coerceAtLeast(1)))
             val currentEnemyBulletSpeed = BASE_ENEMY_BULLET_SPEED * (1f + (currentLevel - 1) * 0.10f)
@@ -284,6 +299,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 玩家子弹更新与碰撞检测
         val pIter = playerBullets.iterator()
         while (pIter.hasNext()) {
             val b = pIter.next()
@@ -293,7 +309,6 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 playerCanShoot = true
             }
         }
-
         val bulletIter = playerBullets.iterator()
         while (bulletIter.hasNext()) {
             val b = bulletIter.next()
@@ -305,29 +320,32 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                     enemyIter.remove()
                     score += 10
                     playerCanShoot = true
+                    explosionSprite?.let {
+                        explosions.add(Explosion(e.rect.centerX(), e.rect.centerY(), e.rect.width(), it))
+                    }
                     break
                 }
             }
         }
 
+        // 敌人子弹更新与碰撞检测
         val eIter = enemyBullets.iterator()
         while (eIter.hasNext()) {
             val b = eIter.next()
             b.update()
-            if (b.isOffScreen(height)) {
-                eIter.remove()
-            }
+            if (b.isOffScreen(height)) eIter.remove()
         }
-
         val enemyBulletIter = enemyBullets.iterator()
         while (enemyBulletIter.hasNext()) {
             val b = enemyBulletIter.next()
             if (::player.isInitialized && RectF.intersects(b.rect, player.rect)) {
                 enemyBulletIter.remove()
                 lives--
+                explosionSprite?.let {
+                    explosions.add(Explosion(player.rect.centerX(), player.rect.centerY(), player.rect.width(), it))
+                }
                 if (lives <= 0) {
                     gameOver = true
-                    // 使用 post 将 clearFlags 操作延迟执行
                     post { activityWindow?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
                     focusedButtonIndex = 0
                     newHighScoreAchievedThisGame = false
@@ -346,9 +364,21 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 }
             }
         }
+
+        // 爆炸效果更新
+        val explosionIter = explosions.iterator()
+        while (explosionIter.hasNext()) {
+            val explosion = explosionIter.next()
+            explosion.update()
+            if (explosion.isFinished) {
+                explosionIter.remove()
+            }
+        }
     }
 
+    // 游戏绘制
     private fun drawGame(canvas: Canvas) {
+        // 背景绘制（循环滚动）
         backgroundBitmap?.let {
             val destRect1 = RectF(0f, backgroundScrollY - height, width.toFloat(), backgroundScrollY)
             canvas.drawBitmap(it, null, destRect1, null)
@@ -358,22 +388,24 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             canvas.drawColor(Color.BLACK)
         }
 
+        // 游戏元素绘制
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)
             enemies.forEach { it.draw(canvas, paint) }
             playerBullets.forEach { it.draw(canvas, paint) }
             enemyBullets.forEach { it.draw(canvas, paint) }
+            explosions.forEach { it.draw(canvas, paint) }
         }
 
+        // 游戏信息绘制
         paint.color = gamePrimaryColor
         paint.textSize = 20f
         paint.textAlign = Paint.Align.LEFT
-        val infoTextTopMargin = 30f
-        val textVerticalSpacing = 30f
-        canvas.drawText("分数: $score", 20f, infoTextTopMargin, paint)
-        canvas.drawText("生命: $lives", 20f, infoTextTopMargin + textVerticalSpacing, paint)
-        canvas.drawText("关卡: $currentLevel", 20f, infoTextTopMargin + textVerticalSpacing * 2, paint)
+        canvas.drawText("分数: $score", 20f, 30f, paint)
+        canvas.drawText("生命: $lives", 20f, 60f, paint)
+        canvas.drawText("关卡: $currentLevel", 20f, 90f, paint)
 
+        // 游戏结束界面绘制
         if (gameOver) {
             paint.textAlign = Paint.Align.CENTER
             paint.textSize = 32f
@@ -388,104 +420,40 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                     Paint(focusedButtonTextPaint).apply { textSize = 32f }
                 }
                 if (highScoreTextPaint.alpha != 0) {
-                     canvas.drawText("新纪录: $highScore", width / 2f, highScoreTextY, highScoreTextPaint)
+                    canvas.drawText("新纪录: $highScore", width / 2f, highScoreTextY, highScoreTextPaint)
                 }
             } else {
-                 highScoreTextY = gameOverTextY + 20f
+                highScoreTextY = gameOverTextY + 20f
             }
 
+            // 绘制按钮
             val buttonWidth = 180f
             val buttonHeight = 60f
             val buttonSpacingHorizontal = 20f
             val totalButtonsWidth = buttonWidth * 2 + buttonSpacingHorizontal
             val buttonsY = highScoreTextY + buttonHeight + 20f
-
             val firstButtonLeft = (width - totalButtonsWidth) / 2f
 
-            restartButtonRect.set(
-                firstButtonLeft,
-                buttonsY,
-                firstButtonLeft + buttonWidth,
-                buttonsY + buttonHeight
-            )
-
+            // 重新开始按钮
+            restartButtonRect.set(firstButtonLeft, buttonsY, firstButtonLeft + buttonWidth, buttonsY + buttonHeight)
             val restartBgPaintToUse = if (focusedButtonIndex == 0) focusedButtonPaint else unfocusedButtonPaint
             val restartTxtPaintToUse = if (focusedButtonIndex == 0) focusedButtonTextPaint else unfocusedButtonTextPaint
             canvas.drawRect(restartButtonRect, restartBgPaintToUse)
-            val textXRestart = restartButtonRect.centerX()
             val textYRestart = restartButtonRect.centerY() - (restartTxtPaintToUse.descent() + restartTxtPaintToUse.ascent()) / 2
-            canvas.drawText(restartButtonText, textXRestart, textYRestart, restartTxtPaintToUse)
+            canvas.drawText(restartButtonText, restartButtonRect.centerX(), textYRestart, restartTxtPaintToUse)
 
+            // 退出按钮
             val exitButtonLeft = firstButtonLeft + buttonWidth + buttonSpacingHorizontal
-            exitButtonRect.set(
-                exitButtonLeft,
-                buttonsY,
-                exitButtonLeft + buttonWidth,
-                buttonsY + buttonHeight
-            )
-
+            exitButtonRect.set(exitButtonLeft, buttonsY, exitButtonLeft + buttonWidth, buttonsY + buttonHeight)
             val exitBgPaintToUse = if (focusedButtonIndex == 1) focusedButtonPaint else unfocusedButtonPaint
             val exitTxtPaintToUse = if (focusedButtonIndex == 1) focusedButtonTextPaint else unfocusedButtonTextPaint
             canvas.drawRect(exitButtonRect, exitBgPaintToUse)
-            val textXExit = exitButtonRect.centerX()
             val textYExit = exitButtonRect.centerY() - (exitTxtPaintToUse.descent() + exitTxtPaintToUse.ascent()) / 2
-            canvas.drawText(exitButtonText, textXExit, textYExit, exitTxtPaintToUse)
+            canvas.drawText(exitButtonText, exitButtonRect.centerX(), textYExit, exitTxtPaintToUse)
         }
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (gameOver) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    if (focusedButtonIndex == 1) focusedButtonIndex = 0
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                    if (focusedButtonIndex == 0) focusedButtonIndex = 1
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                    if (focusedButtonIndex == 0) {
-                        restartGame()
-                    } else {
-                        (context as? android.app.Activity)?.finish()
-                    }
-                    return true
-                }
-            }
-        } else {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_A -> {
-                    movingLeft = true; return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_D -> {
-                    movingRight = true; return true
-                }
-                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE -> {
-                     if (playerCanShoot && !waitingForNextWave && System.currentTimeMillis() - lastPlayerShotTime > 500) {
-                         playerBulletBitmap?.let {
-                            playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, BulletType.PLAYER))
-                            lastPlayerShotTime = System.currentTimeMillis()
-                            playerCanShoot = false
-                         }
-                     }
-                    return true
-                 }
-            }
-        }
-        return super.onKeyDown(keyCode, event)
-    }
-
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (!gameOver) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_A -> movingLeft = false
-                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_D -> movingRight = false
-            }
-        }
-        return true
-    }
-
+    // 游戏控制
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (gameOver && event.action == MotionEvent.ACTION_DOWN) {
             if (restartButtonRect.contains(event.x, event.y)) {
@@ -494,36 +462,60 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 return true
             } else if (exitButtonRect.contains(event.x, event.y)) {
                 focusedButtonIndex = 1
-                 (context as? android.app.Activity)?.finish()
+                (context as? MainActivity)?.finish()
                 return true
-            }
-        } else if (!gameOver && event.action == MotionEvent.ACTION_DOWN) {
-            if (playerCanShoot && !waitingForNextWave && System.currentTimeMillis() - lastPlayerShotTime > 500) {
-                 playerBulletBitmap?.let {
-                     playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, BulletType.PLAYER))
-                     lastPlayerShotTime = System.currentTimeMillis()
-                     playerCanShoot = false
-                     return true
-                 }
             }
         }
         return super.onTouchEvent(event)
     }
 
-    fun pause() {
-        running = false
-        try {
-            thread?.join(500)
-        } catch (e: InterruptedException) {
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (!gameOver) {
+            return when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { movingLeft = true; true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { movingRight = true; true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE -> {
+                    val currentTime = System.currentTimeMillis()
+                    if (playerCanShoot && !waitingForNextWave && currentTime - lastPlayerShotTime > 500) {
+                        playerBulletBitmap?.let {
+                            playerBullets.add(Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, BulletType.PLAYER))
+                            lastPlayerShotTime = currentTime
+                            playerCanShoot = false
+                        }
+                    }
+                    true
+                }
+                else -> super.onKeyDown(keyCode, event)
+            }
+        } else {
+            return when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { focusedButtonIndex = 0; true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { focusedButtonIndex = 1; true }
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_SPACE -> {
+                    if (focusedButtonIndex == 0) {
+                        restartGame()
+                        true
+                    } else {
+                        (context as? MainActivity)?.finish()
+                        true
+                    }
+                }
+                else -> super.onKeyDown(keyCode, event)
+            }
         }
-        thread = null
     }
 
-    fun resume() {
-        if (thread == null || !running) {
-            running = true
-            thread = Thread(this)
-            thread?.start()
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!gameOver) {
+            return when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { movingLeft = false; true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { movingRight = false; true }
+                else -> super.onKeyUp(keyCode, event)
+            }
         }
+        return super.onKeyUp(keyCode, event)
     }
+
+    fun pause() { running = false; try { thread?.join() } catch (_: InterruptedException) {} }
+    fun resume() { if (!running) { running = true; thread = Thread(this); thread?.start() } }
 }
