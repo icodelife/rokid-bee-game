@@ -17,7 +17,7 @@ sealed class BulletType {
 }
 
 /**
- * 子弹类
+ * 子弹类（支持对象池复用）
  *
  * @property bitmap 子弹的位图
  * @property x 子弹的 x 坐标
@@ -29,7 +29,7 @@ class Bullet(
     private val bitmap: Bitmap,
     x: Float,
     y: Float,
-    val speed: Float,
+    var speed: Float,
     private val type: BulletType
 ) : GameObject(x, y) {
 
@@ -46,6 +46,7 @@ class Bullet(
 
     private val bulletWidth: Float
     private val bulletHeight: Float
+    var active: Boolean = false // 是否在使用中（用于对象池控制）
 
     init {
         when (type) {
@@ -72,11 +73,12 @@ class Bullet(
         )
 
     override fun update() {
+        if (!active) return
         y += speed
     }
 
     override fun draw(canvas: Canvas, paint: Paint) {
-        canvas.drawBitmap(bitmap, null, rect, paint)
+        if (active) canvas.drawBitmap(bitmap, null, rect, paint)
     }
 
     /**
@@ -87,5 +89,22 @@ class Bullet(
      */
     fun isOffScreen(screenHeight: Int): Boolean {
         return rect.bottom < 0 || rect.top > screenHeight
+    }
+
+    /**
+     * 重置子弹位置（用于对象池复用）
+     */
+    fun reset(newX: Float, newY: Float, newSpeed: Float) {
+        x = newX
+        y = newY
+        speed = newSpeed
+        active = true
+    }
+
+    /**
+     * 失效（回收）
+     */
+    fun deactivate() {
+        active = false
     }
 }

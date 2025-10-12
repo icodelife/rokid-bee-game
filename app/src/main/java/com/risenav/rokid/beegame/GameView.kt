@@ -25,12 +25,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
     private lateinit var player: Player // 玩家对象
     private val enemies = mutableListOf<Enemy>() // 敌人列表
-    private val playerBullets = mutableListOf<Bullet>() // 玩家子弹列表
-    private val enemyBullets = mutableListOf<Bullet>() // 敌人子弹列表
     private val explosions = mutableListOf<Explosion>() // 爆炸效果列表
-
-    private var lastPlayerShotTime = 0L // 玩家上次射击时间
-    private var playerCanShoot = true   // 玩家是否可以射击
 
     // 初始值常量
     private val initialScore = 0
@@ -101,6 +96,17 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val highScorePaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pauseOverlayPaint: Paint
     private val pauseTextPaint: Paint
+
+    // 控制单子弹逻辑（仍在 GameView 中保留）：上次发射时间与标志
+    private var lastPlayerShotTime = 0L
+    private var playerCanShoot = true   // 只有当场上没有玩家子弹时才允许再次发射
+    private val singleShotInterval = 500L // 子弹 500ms 冷却检查
+
+    // Player 构造时使用的子弹池大小（可调整）
+    private val playerBulletPoolSize = 5
+    private val enemyBulletPool = mutableListOf<Bullet>()
+    private val enemyBulletPoolSize = 10
+
 
     init {
         holder.addCallback(this)
@@ -178,11 +184,17 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         val playerWidth = (screenWidth * 0.08f).toInt().coerceAtLeast(40)
         val playerHeight = (playerWidth * 1.2f).toInt()
 
-        playerBitmap = BitmapUtils.decodeVectorToBitmap(context, R.drawable.airplane, playerWidth, playerHeight)
+        playerBitmap = BitmapUtils.decodeVectorToBitmap(
+            context,
+            R.drawable.airplane,
+            playerWidth,
+            playerHeight
+        )
 
         val enemyWidth = (screenWidth * 0.1f).toInt().coerceAtLeast(40)
         val enemyHeight = (enemyWidth * 0.8f).toInt()
-        enemyBitmap = BitmapUtils.decodeVectorToBitmap(context, R.drawable.enemy, enemyWidth, enemyHeight)
+        enemyBitmap =
+            BitmapUtils.decodeVectorToBitmap(context, R.drawable.enemy, enemyWidth, enemyHeight)
 
         playerBulletBitmap =
             BitmapUtils.decodeSampledBitmapFromResource(res, R.drawable.bullet, 50, 100)
@@ -197,13 +209,29 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         explosionSprite =
             BitmapUtils.decodeSampledBitmapFromResource(res, R.drawable.explode, 200, 200)
 
-        playerBitmap?.let {
+        playerBitmap?.let { pBmp ->
+            val bulletBmp =
+                playerBulletBitmap ?: throw IllegalStateException("玩家子弹位图加载失败")
+            // 传入子弹位图与池大小，Player 内部实现子弹池复用
             player = Player(
                 screenWidth / 2f,
                 screenHeight - (screenHeight * 0.15f).coerceAtLeast(60f),
-                it
+                pBmp,
+                bulletBmp,
+                bulletPoolSize = playerBulletPoolSize
             )
         } ?: throw IllegalStateException("玩家图片 R.drawable.play 加载失败")
+
+        enemyBulletBitmap?.let { bulletBmp ->
+            for (i in 0 until enemyBulletPoolSize) {
+                enemyBulletPool.add(
+                    Bullet(
+                        bulletBmp,
+                        -100f, -100f, 0f, BulletType.ENEMY
+                    )
+                )
+            }
+        } ?: throw IllegalStateException("敌人子弹位图加载失败")
 
         backgroundBitmap?.let {
             try {
@@ -244,7 +272,8 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 val screenWidthFloat = width.toFloat()
                 val enemyBaseWidth = screenWidthFloat / 10f
                 val newEnemyWidth = enemyBaseWidth * 0.8f
-                val newEnemyHeight = newEnemyWidth / (bitmap.width.toFloat() / bitmap.height.toFloat())
+                val newEnemyHeight =
+                    newEnemyWidth / (bitmap.width.toFloat() / bitmap.height.toFloat())
                 val horizontalSpacing = newEnemyWidth * 0.25f
                 val verticalSpacing = newEnemyHeight * 0.3f
                 val newStartY = newEnemyHeight / 2f + (height * 0.05f)
@@ -301,18 +330,28 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             if (::player.isInitialized) {
                 player.x = width / 2f
                 player.y = height - (height * 0.15f).coerceAtLeast(60f)
+                // 回收玩家池中活跃子弹（Player 提供的回收方法是 recycleBullets）
+                player.recycleBullets(height)
             } else {
-                playerBitmap?.let {
-                    player = Player(width / 2f, height - (height * 0.15f).coerceAtLeast(60f), it)
+                playerBitmap?.let { pBmp ->
+                    val bulletBmp =
+                        playerBulletBitmap ?: throw IllegalStateException("玩家子弹位图缺失")
+                    player = Player(
+                        width / 2f,
+                        height - (height * 0.15f).coerceAtLeast(60f),
+                        pBmp,
+                        bulletBmp,
+                        bulletPoolSize = playerBulletPoolSize
+                    )
                 } ?: run {
                     throw IllegalStateException("玩家图片 R.drawable.play 在重新开始时加载失败")
                 }
             }
+
             playerCanShoot = true
             lastPlayerShotTime = 0L
             enemies.clear()
-            playerBullets.clear()
-            enemyBullets.clear()
+            enemyBulletPool.forEach { it.deactivate() }
             explosions.clear()
             spawnNewEnemies()
             waitingForNextWave = false
@@ -396,36 +435,31 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         player.x = player.x.coerceIn(playerHalfWidth, width - playerHalfWidth)
 
         // 玩家射击
-        if (playerCanShoot && !waitingForNextWave && currentTime - lastPlayerShotTime > 500) {
-            playerBulletBitmap?.let {
-                playerBullets.add(
-                    Bullet(it, player.rect.centerX(), player.rect.top - 20, -20f, BulletType.PLAYER)
-                )
-                lastPlayerShotTime = currentTime
-                playerCanShoot = false
-            }
+        val activePlayerBullets = player.getActiveBullets()
+        val hasPlayerBullet = activePlayerBullets.isNotEmpty()
+        if (playerCanShoot && !waitingForNextWave && !hasPlayerBullet && currentTime - lastPlayerShotTime > singleShotInterval) {
+            player.tryShoot()
+            lastPlayerShotTime = currentTime
+            playerCanShoot = false
         }
 
         // 敌人移动和射击
         enemies.forEach { it.update() }
+        val activeEnemyBullets = enemyBulletPool.filter { it.active }
         if (enemies.isNotEmpty() && !waitingForNextWave) {
             val potentialShooters =
                 enemies.shuffled().take(minOf(enemies.size, currentLevel.coerceAtLeast(1)))
             val currentEnemyBulletSpeed = baseEnemyBulletSpeed * (1f + (currentLevel - 1) * 0.10f)
             for (enemy in potentialShooters) {
                 val computedUpper = (2500_000_000L / (currentLevel * 100_000L)).coerceAtLeast(1L)
-                if (enemyBullets.size < currentLevel + 2 && currentTime - enemy.lastShotTime > enemy.shotInterval) {
-                    enemyBulletBitmap?.let {
-                        enemyBullets.add(
-                            Bullet(
-                                it,
-                                enemy.rect.centerX(),
-                                enemy.rect.bottom + 10,
-                                currentEnemyBulletSpeed,
-                                BulletType.ENEMY
-                            )
-                        )
-                    }
+                if (activeEnemyBullets.size < currentLevel + 2 && currentTime - enemy.lastShotTime > enemy.shotInterval) {
+                    val bullet = enemyBulletPool.find { !it.active }
+                    bullet?.reset(
+                        enemy.rect.centerX(),
+                        enemy.rect.bottom + 10,
+                        currentEnemyBulletSpeed
+                    )
+
                     enemy.lastShotTime = currentTime
                     enemy.shotInterval =
                         (1500L + Random.nextLong(0, computedUpper)).coerceAtLeast(500L)
@@ -433,56 +467,60 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
-        // 玩家子弹更新与碰撞检测
-        val pIter = playerBullets.iterator()
-        while (pIter.hasNext()) {
-            val b = pIter.next()
-            b.update()
-            if (b.isOffScreen(height)) {
-                pIter.remove()
-                playerCanShoot = true
-            }
-        }
+        // 玩家内部更新（会更新子弹位移）
+        player.update()
+        // 回收玩家飞出屏幕的子弹
+        player.recycleBullets(height)
 
-        val bulletIter = playerBullets.iterator()
-        while (bulletIter.hasNext()) {
-            val b = bulletIter.next()
-            val enemyIter = enemies.iterator()
-            while (enemyIter.hasNext()) {
-                val e = enemyIter.next()
-                if (RectF.intersects(b.rect, e.rect)) {
-                    bulletIter.remove()
-                    enemyIter.remove()
-                    score += 10
-                    playerCanShoot = true
-                    explosionSprite?.let {
-                        explosions.add(
-                            Explosion(
-                                e.rect.centerX(),
-                                e.rect.centerY(),
-                                e.rect.width(),
-                                it
-                            )
-                        )
+        // 玩家子弹与敌人碰撞检测（使用 Player.getActiveBullets()）
+        val activeBullets = player.getActiveBullets()
+        if (activeBullets.isNotEmpty()) {
+            val bulletIter = activeBullets.iterator()
+            // 注意：activeBullets 是从池中取出的 List（Player.getActiveBullets 返回的是副本），
+            // 我们需要遍历副本并在命中时通过 Bullet.deactivate() 将其回收到池中（Player.recycleBullets 也可回收飞出屏幕的）
+            val enemiesIterator = enemies.iterator()
+            // 为了简单直接：对每个子弹遍历敌人（场景小，性能可接受），命中则处理
+            run lit@{
+                for (b in activeBullets) {
+                    for (e in enemies.toList()) {
+                        if (RectF.intersects(b.rect, e.rect)) {
+                            // 回收子弹
+                            b.deactivate()
+                            // 从敌人列表移除并产生爆炸
+                            enemies.remove(e)
+                            score += 10
+                            explosionSprite?.let {
+                                explosions.add(
+                                    Explosion(
+                                        e.rect.centerX(),
+                                        e.rect.centerY(),
+                                        e.rect.width(),
+                                        it
+                                    )
+                                )
+                            }
+                            // 标记允许再次开火
+                            playerCanShoot = true
+                            break
+                        }
                     }
-                    break
                 }
             }
         }
 
         // 敌人子弹更新与碰撞检测
-        val eIter = enemyBullets.iterator()
-        while (eIter.hasNext()) {
-            val b = eIter.next()
-            b.update()
-            if (b.isOffScreen(height)) eIter.remove()
+        enemyBulletPool.forEach { bullet ->
+            if (bullet.active) {
+                bullet.update()
+                if (bullet.isOffScreen(height)) {
+                    bullet.deactivate()
+                }
+            }
         }
 
-        val enemyBulletIter = enemyBullets.iterator()
-        while (enemyBulletIter.hasNext()) {
-            val b = enemyBulletIter.next()
+        enemyBulletPool.filter { it.active }.forEach { b ->
             if (::player.isInitialized && RectF.intersects(b.rect, player.rect)) {
-                enemyBulletIter.remove()
+                b.deactivate()
                 lives--
                 explosionSprite?.let {
                     explosions.add(
@@ -528,7 +566,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         }
 
         // 安全恢复射击：若场上没有玩家子弹，则允许再次射击（防止锁死）
-        if (playerBullets.isEmpty()) {
+        if (player.getActiveBullets().isEmpty()) {
             playerCanShoot = true
         }
     }
@@ -549,8 +587,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)
             enemies.forEach { it.draw(canvas, paint) }
-            playerBullets.forEach { it.draw(canvas, paint) }
-            enemyBullets.forEach { it.draw(canvas, paint) }
+            enemyBulletPool.filter { it.active }.forEach { it.draw(canvas, paint) }
             explosions.forEach { it.draw(canvas, paint) }
         }
 
