@@ -1,7 +1,10 @@
 package com.risenav.rokid.beegame
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import androidx.core.content.ContextCompat
 
 /**
  * 位图加载工具类：根据目标大小计算最佳 inSampleSize
@@ -48,5 +51,25 @@ object BitmapUtils {
             }
         }
         return inSampleSize
+    }
+
+    fun decodeVectorToBitmap(
+        context: Context,
+        drawableId: Int,
+        reqWidth: Int,
+        reqHeight: Int
+    ): Bitmap {
+        val vectorDrawable = ContextCompat.getDrawable(context, drawableId)
+            ?: throw IllegalArgumentException("Invalid drawable resource ID")
+
+        val bitmap = Bitmap.createBitmap(
+            reqWidth.coerceAtLeast(1),
+            reqHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        vectorDrawable.setBounds(0, 0, canvas.width, canvas.height)
+        vectorDrawable.draw(canvas)
+        return bitmap
     }
 }

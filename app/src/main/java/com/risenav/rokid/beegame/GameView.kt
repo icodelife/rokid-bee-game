@@ -88,7 +88,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     // 资源加载
     private val gamePrimaryColor: Int
     private var playerBitmap: Bitmap? = null
-    private var enemySpriteSheet: Bitmap? = null
+    private var enemyBitmap: Bitmap? = null
     private var playerBulletBitmap: Bitmap? = null
     private var enemyBulletBitmap: Bitmap? = null
     private var backgroundBitmap: Bitmap? = null
@@ -152,7 +152,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         }
 
         pauseOverlayPaint = Paint().apply {
-            color = Color.argb(180, 0, 0, 0) // Semi-transparent black
+            color = Color.argb(180, 0, 0, 0) // 半透明黑色遮罩
         }
         pauseTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
@@ -175,19 +175,15 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         val screenHeight = height
         val res = context.resources
 
-        // 使用 inSampleSize 高效加载位图
-        playerBitmap = BitmapUtils.decodeSampledBitmapFromResource(
-            res,
-            R.drawable.airplane,
-            screenWidth,
-            screenHeight
-        )
-        enemySpriteSheet = BitmapUtils.decodeSampledBitmapFromResource(
-            res,
-            R.drawable.galaxing,
-            screenWidth,
-            screenHeight
-        )
+        val playerWidth = (screenWidth * 0.08f).toInt().coerceAtLeast(40)
+        val playerHeight = (playerWidth * 1.2f).toInt()
+
+        playerBitmap = BitmapUtils.decodeVectorToBitmap(context, R.drawable.airplane, playerWidth, playerHeight)
+
+        val enemyWidth = (screenWidth * 0.1f).toInt().coerceAtLeast(40)
+        val enemyHeight = (enemyWidth * 0.8f).toInt()
+        enemyBitmap = BitmapUtils.decodeVectorToBitmap(context, R.drawable.enemy, enemyWidth, enemyHeight)
+
         playerBulletBitmap =
             BitmapUtils.decodeSampledBitmapFromResource(res, R.drawable.bullet, 50, 100)
         enemyBulletBitmap =
@@ -201,26 +197,20 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         explosionSprite =
             BitmapUtils.decodeSampledBitmapFromResource(res, R.drawable.explode, 200, 200)
 
-        // 初始化玩家
         playerBitmap?.let {
-            val targetWidth = (screenWidth * 0.08f).toInt().coerceAtLeast(40)
-            val ratio = it.height.toFloat() / it.width.toFloat()
-            val scaledPlayer = it.scale(targetWidth, (targetWidth * ratio).toInt(), true)
-            playerBitmap = scaledPlayer // 更新为缩放后的位图
             player = Player(
                 screenWidth / 2f,
                 screenHeight - (screenHeight * 0.15f).coerceAtLeast(60f),
-                scaledPlayer
+                it
             )
-        } ?: throw IllegalStateException("玩家图片 R.drawable.airplane 加载失败")
+        } ?: throw IllegalStateException("玩家图片 R.drawable.play 加载失败")
 
-        // 缩放背景图以匹配屏幕尺寸
         backgroundBitmap?.let {
             try {
                 val scaledBg =
                     it.scale(screenWidth.coerceAtLeast(1), screenHeight.coerceAtLeast(1), true)
-                if (scaledBg != it) { // 如果创建了新的位图
-                    it.recycle() // 立即回收旧的位图
+                if (scaledBg != it) {
+                    it.recycle()
                 }
                 backgroundBitmap = scaledBg
             } catch (e: Exception) {
@@ -228,7 +218,6 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
-        // 生成敌人
         synchronized(holder) {
             spawnNewEnemies()
         }
@@ -240,21 +229,22 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
-        pause()
-        release()
+        // 在 surface 销毁时加锁，确保线程在退出前不会再访问 holder 中的资源
+        synchronized(holder) {
+            pause()
+            release()
+        }
     }
 
+    // 生成敌人
     private fun spawnNewEnemies() {
         synchronized(holder) {
             enemies.clear()
-            enemySpriteSheet?.let { spriteSheet ->
+            enemyBitmap?.let { bitmap ->
                 val screenWidthFloat = width.toFloat()
-                val frameWidth = 60f
-                val frameHeight = 44f
-                val aspectRatio = frameWidth / frameHeight
                 val enemyBaseWidth = screenWidthFloat / 10f
                 val newEnemyWidth = enemyBaseWidth * 0.8f
-                val newEnemyHeight = newEnemyWidth / aspectRatio
+                val newEnemyHeight = newEnemyWidth / (bitmap.width.toFloat() / bitmap.height.toFloat())
                 val horizontalSpacing = newEnemyWidth * 0.25f
                 val verticalSpacing = newEnemyHeight * 0.3f
                 val newStartY = newEnemyHeight / 2f + (height * 0.05f)
@@ -276,7 +266,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                                 currentY,
                                 newEnemyWidth,
                                 newEnemyHeight,
-                                spriteSheet,
+                                bitmap, // 直接使用加载的位图
                                 rowIndex,
                                 width
                             )
@@ -286,12 +276,13 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                     currentY += newEnemyHeight + verticalSpacing
                 }
             } ?: run {
-                throw IllegalStateException("敌人雪碧图 R.drawable.galaxing 加载失败")
+                throw IllegalStateException("敌人图片 R.drawable.enemy 加载失败")
             }
             waitingForNextWave = false
         }
     }
 
+    // 重新开始游戏
     private fun restartGame() {
         post {
             activityWindowRef.get()?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -314,7 +305,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 playerBitmap?.let {
                     player = Player(width / 2f, height - (height * 0.15f).coerceAtLeast(60f), it)
                 } ?: run {
-                    throw IllegalStateException("玩家图片 R.drawable.airplane 在重新开始时加载失败")
+                    throw IllegalStateException("玩家图片 R.drawable.play 在重新开始时加载失败")
                 }
             }
             playerCanShoot = true
@@ -327,8 +318,12 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             waitingForNextWave = false
             nextWaveSpawnTime = 0L
         }
+
+        // 确保重启时线程恢复运行（防止 pause 导致线程未启动）
+        resume()
     }
 
+    // 游戏主循环
     override fun run() {
         while (running) {
             try {
@@ -362,6 +357,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         }
     }
 
+    // 游戏逻辑更新
     private fun update() {
         if (isPaused) return
         if (!::player.isInitialized) return
@@ -377,9 +373,11 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             return
         }
 
+        // 背景滚动
         backgroundScrollY += backgroundScrollSpeed
         if (backgroundScrollY >= height) backgroundScrollY = 0f
 
+        // 波次生成
         if (enemies.isEmpty() && !waitingForNextWave) {
             currentLevel++
             waitingForNextWave = true
@@ -391,11 +389,13 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 玩家移动
         if (movingLeft) player.x -= playerSpeed
         if (movingRight) player.x += playerSpeed
         val playerHalfWidth = if (::player.isInitialized) player.rect.width() / 2f else 30f
         player.x = player.x.coerceIn(playerHalfWidth, width - playerHalfWidth)
 
+        // 玩家射击
         if (playerCanShoot && !waitingForNextWave && currentTime - lastPlayerShotTime > 500) {
             playerBulletBitmap?.let {
                 playerBullets.add(
@@ -406,6 +406,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 敌人移动和射击
         enemies.forEach { it.update() }
         if (enemies.isNotEmpty() && !waitingForNextWave) {
             val potentialShooters =
@@ -432,6 +433,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 玩家子弹更新与碰撞检测
         val pIter = playerBullets.iterator()
         while (pIter.hasNext()) {
             val b = pIter.next()
@@ -468,6 +470,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 敌人子弹更新与碰撞检测
         val eIter = enemyBullets.iterator()
         while (eIter.hasNext()) {
             val b = eIter.next()
@@ -514,6 +517,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
         }
 
+        // 爆炸效果更新
         val explosionIter = explosions.iterator()
         while (explosionIter.hasNext()) {
             val explosion = explosionIter.next()
@@ -522,9 +526,16 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 explosionIter.remove()
             }
         }
+
+        // 安全恢复射击：若场上没有玩家子弹，则允许再次射击（防止锁死）
+        if (playerBullets.isEmpty()) {
+            playerCanShoot = true
+        }
     }
 
+    // 游戏绘制
     private fun drawGame(canvas: Canvas) {
+        // 背景绘制（循环滚动）
         backgroundBitmap?.let {
             val destRect1 =
                 RectF(0f, backgroundScrollY - height, width.toFloat(), backgroundScrollY)
@@ -534,6 +545,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             canvas.drawBitmap(it, null, destRect2, null)
         } ?: canvas.drawColor(Color.BLACK)
 
+        // 游戏元素绘制
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)
             enemies.forEach { it.draw(canvas, paint) }
@@ -542,6 +554,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             explosions.forEach { it.draw(canvas, paint) }
         }
 
+        // 游戏信息绘制
         paint.color = gamePrimaryColor
         paint.textSize = 20f
         paint.textAlign = Paint.Align.LEFT
@@ -549,6 +562,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         canvas.drawText("生命: $lives", 20f, 60f, paint)
         canvas.drawText("关卡: $currentLevel", 20f, 90f, paint)
 
+        // 游戏结束界面绘制
         if (gameOver) {
             paint.textAlign = Paint.Align.CENTER
             paint.textSize = 32f
@@ -571,6 +585,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 highScoreTextY = gameOverTextY + 20f
             }
 
+            // 绘制按钮
             val buttonWidth = 180f
             val buttonHeight = 60f
             val buttonSpacingHorizontal = 20f
@@ -578,6 +593,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             val buttonsY = highScoreTextY + buttonHeight + 20f
             val firstButtonLeft = (width - totalButtonsWidth) / 2f
 
+            // 重新开始按钮
             restartButtonRect.set(
                 firstButtonLeft,
                 buttonsY,
@@ -598,6 +614,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 restartTxtPaintToUse
             )
 
+            // 退出按钮
             val exitButtonLeft = firstButtonLeft + buttonWidth + buttonSpacingHorizontal
             exitButtonRect.set(
                 exitButtonLeft,
@@ -622,6 +639,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         }
     }
 
+    // 游戏控制
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (isPaused && !gameOver) {
             if (event.action == MotionEvent.ACTION_DOWN) {
@@ -697,6 +715,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             }
 
             KeyEvent.KEYCODE_BACK -> true
+
             else -> {
                 Log.d("KeyEvent", "按键按下：$keyCode")
                 super.onKeyDown(keyCode, event)
@@ -757,17 +776,38 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     }
 
     fun release() {
-        backgroundBitmap?.recycle()
-        playerBitmap?.recycle()
-        playerBulletBitmap?.recycle()
-        enemyBulletBitmap?.recycle()
-        enemySpriteSheet?.recycle()
-        explosionSprite?.recycle()
+        try {
+            backgroundBitmap?.recycle()
+        } catch (_: Exception) {
+        }
+        try {
+            playerBitmap?.recycle()
+        } catch (_: Exception) {
+        }
+        try {
+            playerBulletBitmap?.recycle()
+        } catch (_: Exception) {
+        }
+        try {
+            enemyBulletBitmap?.recycle()
+        } catch (_: Exception) {
+        }
+        try {
+            enemyBitmap?.recycle()
+        } catch (_: Exception) {
+        }
+        try {
+            explosionSprite?.recycle()
+        } catch (_: Exception) {
+        }
         backgroundBitmap = null
         playerBitmap = null
         playerBulletBitmap = null
         enemyBulletBitmap = null
-        enemySpriteSheet = null
+        enemyBitmap = null
         explosionSprite = null
+
+        // 清理对 Window 的弱引用，避免残留
+        activityWindowRef.clear()
     }
 }
