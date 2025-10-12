@@ -107,6 +107,9 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private val enemyBulletPool = mutableListOf<Bullet>()
     private val enemyBulletPoolSize = 10
 
+    private val bgDestRect1 = RectF()
+    private val bgDestRect2 = RectF()
+
 
     init {
         holder.addCallback(this)
@@ -436,8 +439,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
         // 玩家射击
         val activePlayerBullets = player.getActiveBullets()
-        val hasPlayerBullet = activePlayerBullets.isNotEmpty()
-        if (playerCanShoot && !waitingForNextWave && !hasPlayerBullet && currentTime - lastPlayerShotTime > singleShotInterval) {
+        if (playerCanShoot && !waitingForNextWave && activePlayerBullets.isEmpty() && currentTime - lastPlayerShotTime > singleShotInterval) {
             player.tryShoot()
             lastPlayerShotTime = currentTime
             playerCanShoot = false
@@ -445,24 +447,42 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
 
         // 敌人移动和射击
         enemies.forEach { it.update() }
-        val activeEnemyBullets = enemyBulletPool.filter { it.active }
         if (enemies.isNotEmpty() && !waitingForNextWave) {
-            val potentialShooters =
-                enemies.shuffled().take(minOf(enemies.size, currentLevel.coerceAtLeast(1)))
-            val currentEnemyBulletSpeed = baseEnemyBulletSpeed * (1f + (currentLevel - 1) * 0.10f)
-            for (enemy in potentialShooters) {
-                val computedUpper = (2500_000_000L / (currentLevel * 100_000L)).coerceAtLeast(1L)
-                if (activeEnemyBullets.size < currentLevel + 2 && currentTime - enemy.lastShotTime > enemy.shotInterval) {
-                    val bullet = enemyBulletPool.find { !it.active }
-                    bullet?.reset(
-                        enemy.rect.centerX(),
-                        enemy.rect.bottom + 10,
-                        currentEnemyBulletSpeed
-                    )
+            // 1. 计算当前活跃的敌人子弹数量
+            var activeEnemyBulletCount = 0
+            for (bullet in enemyBulletPool) {
+                if (bullet.active) {
+                    activeEnemyBulletCount++
+                }
+            }
 
-                    enemy.lastShotTime = currentTime
-                    enemy.shotInterval =
-                        (1500L + Random.nextLong(0, computedUpper)).coerceAtLeast(500L)
+            // 2. 随机选择射击的敌人
+            val potentialShooterCount = minOf(enemies.size, currentLevel.coerceAtLeast(1))
+            val currentEnemyBulletSpeed = baseEnemyBulletSpeed * (1f + (currentLevel - 1) * 0.10f)
+
+            // 随机选择几个不重复的敌人进行射击
+            if (enemies.isNotEmpty()) {
+                for (i in 0 until potentialShooterCount) {
+                    val shooterIndex = Random.nextInt(enemies.size)
+                    val enemy = enemies[shooterIndex]
+
+                    if (activeEnemyBulletCount < currentLevel + 2 && currentTime - enemy.lastShotTime > enemy.shotInterval) {
+                        val bullet = enemyBulletPool.find { !it.active }
+                        bullet?.let {
+                            it.reset(
+                                enemy.rect.centerX(),
+                                enemy.rect.bottom + 10,
+                                currentEnemyBulletSpeed
+                            )
+                            activeEnemyBulletCount++
+                        }
+
+                        enemy.lastShotTime = currentTime
+                        val computedUpper =
+                            (2500_000_000L / (currentLevel * 100_000L)).coerceAtLeast(1L)
+                        enemy.shotInterval =
+                            (1500L + Random.nextLong(0, computedUpper)).coerceAtLeast(500L)
+                    }
                 }
             }
         }
@@ -472,41 +492,35 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
         // 回收玩家飞出屏幕的子弹
         player.recycleBullets(height)
 
-        // 玩家子弹与敌人碰撞检测（使用 Player.getActiveBullets()）
-        val activeBullets = player.getActiveBullets()
-        if (activeBullets.isNotEmpty()) {
-            val bulletIter = activeBullets.iterator()
-            // 注意：activeBullets 是从池中取出的 List（Player.getActiveBullets 返回的是副本），
-            // 我们需要遍历副本并在命中时通过 Bullet.deactivate() 将其回收到池中（Player.recycleBullets 也可回收飞出屏幕的）
-            val enemiesIterator = enemies.iterator()
-            // 为了简单直接：对每个子弹遍历敌人（场景小，性能可接受），命中则处理
-            run lit@{
-                for (b in activeBullets) {
-                    for (e in enemies.toList()) {
-                        if (RectF.intersects(b.rect, e.rect)) {
-                            // 回收子弹
-                            b.deactivate()
-                            // 从敌人列表移除并产生爆炸
-                            enemies.remove(e)
-                            score += 10
-                            explosionSprite?.let {
-                                explosions.add(
-                                    Explosion(
-                                        e.rect.centerX(),
-                                        e.rect.centerY(),
-                                        e.rect.width(),
-                                        it
-                                    )
+        // 玩家子弹与敌人碰撞检测
+        if (activePlayerBullets.isNotEmpty()) {
+            val bulletIter = activePlayerBullets.iterator()
+            while (bulletIter.hasNext()) {
+                val bullet = bulletIter.next()
+                val enemiesIterator = enemies.iterator()
+                while (enemiesIterator.hasNext()) {
+                    val enemy = enemiesIterator.next()
+                    if (RectF.intersects(bullet.rect, enemy.rect)) {
+                        bullet.deactivate() // 回收子弹
+                        enemiesIterator.remove() // 使用迭代器安全地移除敌人
+                        score += 10
+                        explosionSprite?.let {
+                            explosions.add(
+                                Explosion(
+                                    enemy.rect.centerX(),
+                                    enemy.rect.centerY(),
+                                    enemy.rect.width(),
+                                    it
                                 )
-                            }
-                            // 标记允许再次开火
-                            playerCanShoot = true
-                            break
+                            )
                         }
+                        playerCanShoot = true // 标记允许再次开火
+                        break // 一个子弹只击中一个敌人，跳出内层循环
                     }
                 }
             }
         }
+
 
         // 敌人子弹更新与碰撞检测
         enemyBulletPool.forEach { bullet ->
@@ -514,41 +528,38 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 bullet.update()
                 if (bullet.isOffScreen(height)) {
                     bullet.deactivate()
-                }
-            }
-        }
-
-        enemyBulletPool.filter { it.active }.forEach { b ->
-            if (::player.isInitialized && RectF.intersects(b.rect, player.rect)) {
-                b.deactivate()
-                lives--
-                explosionSprite?.let {
-                    explosions.add(
-                        Explosion(
-                            player.rect.centerX(),
-                            player.rect.centerY(),
-                            player.rect.width(),
-                            it
+                } else if (::player.isInitialized && RectF.intersects(bullet.rect, player.rect)) {
+                    bullet.deactivate()
+                    lives--
+                    explosionSprite?.let {
+                        explosions.add(
+                            Explosion(
+                                player.rect.centerX(),
+                                player.rect.centerY(),
+                                player.rect.width(),
+                                it
+                            )
                         )
-                    )
-                }
-                if (lives <= 0) {
-                    gameOver = true
-                    post {
-                        activityWindowRef.get()
-                            ?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     }
-                    focusedButtonIndex = 0
-                    newHighScoreAchievedThisGame = false
-                    if (score > highScore) {
-                        highScore = score
-                        newHighScoreAchievedThisGame = true
-                        highScoreBlinkCount = 0
-                        highScoreBlinkStartTime = currentTime
-                        highScoreBlinkStateVisible = true
-                        val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-                        prefs.edit {
-                            putInt(highScoreKey, highScore)
+                    if (lives <= 0) {
+                        gameOver = true
+                        post {
+                            activityWindowRef.get()
+                                ?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                        focusedButtonIndex = 0
+                        newHighScoreAchievedThisGame = false
+                        if (score > highScore) {
+                            highScore = score
+                            newHighScoreAchievedThisGame = true
+                            highScoreBlinkCount = 0
+                            highScoreBlinkStartTime = currentTime
+                            highScoreBlinkStateVisible = true
+                            val prefs =
+                                context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+                            prefs.edit {
+                                putInt(highScoreKey, highScore)
+                            }
                         }
                     }
                 }
@@ -575,19 +586,21 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
     private fun drawGame(canvas: Canvas) {
         // 背景绘制（循环滚动）
         backgroundBitmap?.let {
-            val destRect1 =
-                RectF(0f, backgroundScrollY - height, width.toFloat(), backgroundScrollY)
-            canvas.drawBitmap(it, null, destRect1, null)
-            val destRect2 =
-                RectF(0f, backgroundScrollY, width.toFloat(), backgroundScrollY + height)
-            canvas.drawBitmap(it, null, destRect2, null)
+            bgDestRect1.set(0f, backgroundScrollY - height, width.toFloat(), backgroundScrollY)
+            canvas.drawBitmap(it, null, bgDestRect1, null)
+            bgDestRect2.set(0f, backgroundScrollY, width.toFloat(), backgroundScrollY + height)
+            canvas.drawBitmap(it, null, bgDestRect2, null)
         } ?: canvas.drawColor(Color.BLACK)
 
         // 游戏元素绘制
         if (!gameOver) {
             if (::player.isInitialized) player.draw(canvas, paint)
             enemies.forEach { it.draw(canvas, paint) }
-            enemyBulletPool.filter { it.active }.forEach { it.draw(canvas, paint) }
+            enemyBulletPool.forEach {
+                if (it.active) {
+                    it.draw(canvas, paint)
+                }
+            }
             explosions.forEach { it.draw(canvas, paint) }
         }
 
@@ -637,19 +650,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 firstButtonLeft + buttonWidth,
                 buttonsY + buttonHeight
             )
-            val restartBgPaintToUse =
-                if (focusedButtonIndex == 0) focusedButtonPaint else unfocusedButtonPaint
-            val restartTxtPaintToUse =
-                if (focusedButtonIndex == 0) focusedButtonTextPaint else unfocusedButtonTextPaint
-            canvas.drawRect(restartButtonRect, restartBgPaintToUse)
-            val textYRestart =
-                restartButtonRect.centerY() - (restartTxtPaintToUse.descent() + restartTxtPaintToUse.ascent()) / 2
-            canvas.drawText(
-                restartButtonText,
-                restartButtonRect.centerX(),
-                textYRestart,
-                restartTxtPaintToUse
-            )
+            drawButton(canvas, restartButtonText, restartButtonRect, focusedButtonIndex == 0)
 
             // 退出按钮
             val exitButtonLeft = firstButtonLeft + buttonWidth + buttonSpacingHorizontal
@@ -659,14 +660,7 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
                 exitButtonLeft + buttonWidth,
                 buttonsY + buttonHeight
             )
-            val exitBgPaintToUse =
-                if (focusedButtonIndex == 1) focusedButtonPaint else unfocusedButtonPaint
-            val exitTxtPaintToUse =
-                if (focusedButtonIndex == 1) focusedButtonTextPaint else unfocusedButtonTextPaint
-            canvas.drawRect(exitButtonRect, exitBgPaintToUse)
-            val textYExit =
-                exitButtonRect.centerY() - (exitTxtPaintToUse.descent() + exitTxtPaintToUse.ascent()) / 2
-            canvas.drawText(exitButtonText, exitButtonRect.centerX(), textYExit, exitTxtPaintToUse)
+            drawButton(canvas, exitButtonText, exitButtonRect, focusedButtonIndex == 1)
         }
 
         if (isPaused && !gameOver) {
@@ -674,6 +668,15 @@ class GameView(context: Context) : SurfaceView(context), Runnable, SurfaceHolder
             val textY = height / 2f - (pauseTextPaint.descent() + pauseTextPaint.ascent()) / 2
             canvas.drawText("游戏暂停", width / 2f, textY, pauseTextPaint)
         }
+    }
+
+    // 按钮绘制
+    private fun drawButton(canvas: Canvas, text: String, rect: RectF, isFocused: Boolean) {
+        val bgPaint = if (isFocused) focusedButtonPaint else unfocusedButtonPaint
+        val textPaint = if (isFocused) focusedButtonTextPaint else unfocusedButtonTextPaint
+        canvas.drawRect(rect, bgPaint)
+        val textY = rect.centerY() - (textPaint.descent() + textPaint.ascent()) / 2
+        canvas.drawText(text, rect.centerX(), textY, textPaint)
     }
 
     // 游戏控制
